@@ -129,10 +129,10 @@ const base = require("@sembiance/xbase"),
 				if(!result.result)
 					return cb(new Error("CDPW.evaluate: No sub result"));
 
-				if(!["number", "string", "boolean"].includes(result.result.type))
+				if(!["number", "string", "boolean", "undefined"].includes(result.result.type))
 				{
-					console.log(result);
-					return cb(new Error("CDPW.evaluate: Unsupported result type [" + result.result.type + "] for expression: ", expression));
+					//console.log(result);
+					return cb(new Error("CDPW.evaluate: Unsupported result type [" + result.result.type + "] for expression: " + expression));
 				}
 
 				cb(undefined, result.result.value);
@@ -167,7 +167,7 @@ const base = require("@sembiance/xbase"),
 		// Returns true if the selector is visible, false otherwise
 		isVisible(selector, cb)
 		{
-			this.evaluate(`window.getComputedStyle(document.querySelector("${selector.replaceAll('"', '\\"')}")).display!=="none"`, (suberr, r) => (suberr ? cb(suberr) : cb(undefined, r)));
+			this.evaluate(`window.getComputedStyle(document.querySelector("${selector.replaceAll('"', '\\"')}")).display!=="none"`, (suberr, r) => (suberr ? cb() : cb(undefined, r)));
 		}
 
 		// Runs the given selector on the document
@@ -294,6 +294,133 @@ const base = require("@sembiance/xbase"),
 		mouseMove(target, ...args)
 		{
 			this.mouseEvent(target, "mouseMoved", ...args);
+		}
+
+		// Presses a single key on the keyboard
+		pressKey(c, cb)
+		{
+			const cdpw=this;
+			const KEYMAP =
+			{
+				"\b"  : ["Backspace", "Backspace", "", "", 8, 8, false, false],
+				"\t"  : ["Tab", "Tab", "", "", 9, 9, false, false],
+				"\r"  : ["Enter", "Enter", "\r", "\r", 13, 13, false, true],
+				"\u001b" : ["Escape", "Escape", "", "", 27, 27, false, false],
+				" "   : ["Space", " ", " ", " ", 32, 32, false, true],
+				"!"   : ["Digit1", "!", "!", "1", 49, 49, true, true],
+				'"'   : ["Quote", "\"", "\"", "'", 222, 222, true, true],
+				"#"   : ["Digit3", "#", "#", "3", 51, 51, true, true],
+				"$"   : ["Digit4", "$", "$", "4", 52, 52, true, true],
+				"%"   : ["Digit5", "%", "%", "5", 53, 53, true, true],
+				"&"   : ["Digit7", "&", "&", "7", 55, 55, true, true],
+				"'"   : ["Quote", "'", "'", "'", 222, 222, false, true],
+				"("   : ["Digit9", "(", "(", "9", 57, 57, true, true],
+				")"   : ["Digit0", ")", ")", "0", 48, 48, true, true],
+				"*"   : ["Digit8", "*", "*", "8", 56, 56, true, true],
+				"+"   : ["Equal", "+", "+", "=", 187, 187, true, true],
+				","   : ["Comma", ",", ",", ",", 188, 188, false, true],
+				"-"   : ["Minus", "-", "-", "-", 189, 189, false, true],
+				"."   : ["Period", ".", ".", ".", 190, 190, false, true],
+				"/"   : ["Slash", "/", "/", "/", 191, 191, false, true],
+				"0"   : ["Digit0", "0", "0", "0", 48, 48, false, true],
+				"1"   : ["Digit1", "1", "1", "1", 49, 49, false, true],
+				"2"   : ["Digit2", "2", "2", "2", 50, 50, false, true],
+				"3"   : ["Digit3", "3", "3", "3", 51, 51, false, true],
+				"4"   : ["Digit4", "4", "4", "4", 52, 52, false, true],
+				"5"   : ["Digit5", "5", "5", "5", 53, 53, false, true],
+				"6"   : ["Digit6", "6", "6", "6", 54, 54, false, true],
+				"7"   : ["Digit7", "7", "7", "7", 55, 55, false, true],
+				"8"   : ["Digit8", "8", "8", "8", 56, 56, false, true],
+				"9"   : ["Digit9", "9", "9", "9", 57, 57, false, true],
+				":"   : ["Semicolon", ":", ":", ";", 186, 186, true, true],
+				";"   : ["Semicolon", ";", ";", ";", 186, 186, false, true],
+				"<"   : ["Comma", "<", "<", ",", 188, 188, true, true],
+				"="   : ["Equal", "=", "=", "=", 187, 187, false, true],
+				">"   : ["Period", ">", ">", ".", 190, 190, true, true],
+				"?"   : ["Slash", "?", "?", "/", 191, 191, true, true],
+				"@"   : ["Digit2", "@", "@", "2", 50, 50, true, true],
+				"A"   : ["KeyA", "A", "A", "a", 65, 65, true, true],
+				"B"   : ["KeyB", "B", "B", "b", 66, 66, true, true],
+				"C"   : ["KeyC", "C", "C", "c", 67, 67, true, true],
+				"D"   : ["KeyD", "D", "D", "d", 68, 68, true, true],
+				"E"   : ["KeyE", "E", "E", "e", 69, 69, true, true],
+				"F"   : ["KeyF", "F", "F", "f", 70, 70, true, true],
+				"G"   : ["KeyG", "G", "G", "g", 71, 71, true, true],
+				"H"   : ["KeyH", "H", "H", "h", 72, 72, true, true],
+				"I"   : ["KeyI", "I", "I", "i", 73, 73, true, true],
+				"J"   : ["KeyJ", "J", "J", "j", 74, 74, true, true],
+				"K"   : ["KeyK", "K", "K", "k", 75, 75, true, true],
+				"L"   : ["KeyL", "L", "L", "l", 76, 76, true, true],
+				"M"   : ["KeyM", "M", "M", "m", 77, 77, true, true],
+				"N"   : ["KeyN", "N", "N", "n", 78, 78, true, true],
+				"O"   : ["KeyO", "O", "O", "o", 79, 79, true, true],
+				"P"   : ["KeyP", "P", "P", "p", 80, 80, true, true],
+				"Q"   : ["KeyQ", "Q", "Q", "q", 81, 81, true, true],
+				"R"   : ["KeyR", "R", "R", "r", 82, 82, true, true],
+				"S"   : ["KeyS", "S", "S", "s", 83, 83, true, true],
+				"T"   : ["KeyT", "T", "T", "t", 84, 84, true, true],
+				"U"   : ["KeyU", "U", "U", "u", 85, 85, true, true],
+				"V"   : ["KeyV", "V", "V", "v", 86, 86, true, true],
+				"W"   : ["KeyW", "W", "W", "w", 87, 87, true, true],
+				"X"   : ["KeyX", "X", "X", "x", 88, 88, true, true],
+				"Y"   : ["KeyY", "Y", "Y", "y", 89, 89, true, true],
+				"Z"   : ["KeyZ", "Z", "Z", "z", 90, 90, true, true],
+				"["   : ["BracketLeft", "[", "[", "[", 219, 219, false, true],
+				"\\"  : ["Backslash", "\\", "\\", "\\", 220, 220, false, true],
+				"]"   : ["BracketRight", "]", "]", "]", 221, 221, false, true],
+				"^"   : ["Digit6", "^", "^", "6", 54, 54, true, true],
+				"_"   : ["Minus", "_", "_", "-", 189, 189, true, true],
+				"`"   : ["Backquote", "`", "`", "`", 192, 192, false, true],
+				"a"   : ["KeyA", "a", "a", "a", 65, 65, false, true],
+				"b"   : ["KeyB", "b", "b", "b", 66, 66, false, true],
+				"c"   : ["KeyC", "c", "c", "c", 67, 67, false, true],
+				"d"   : ["KeyD", "d", "d", "d", 68, 68, false, true],
+				"e"   : ["KeyE", "e", "e", "e", 69, 69, false, true],
+				"f"   : ["KeyF", "f", "f", "f", 70, 70, false, true],
+				"g"   : ["KeyG", "g", "g", "g", 71, 71, false, true],
+				"h"   : ["KeyH", "h", "h", "h", 72, 72, false, true],
+				"i"   : ["KeyI", "i", "i", "i", 73, 73, false, true],
+				"j"   : ["KeyJ", "j", "j", "j", 74, 74, false, true],
+				"k"   : ["KeyK", "k", "k", "k", 75, 75, false, true],
+				"l"   : ["KeyL", "l", "l", "l", 76, 76, false, true],
+				"m"   : ["KeyM", "m", "m", "m", 77, 77, false, true],
+				"n"   : ["KeyN", "n", "n", "n", 78, 78, false, true],
+				"o"   : ["KeyO", "o", "o", "o", 79, 79, false, true],
+				"p"   : ["KeyP", "p", "p", "p", 80, 80, false, true],
+				"q"   : ["KeyQ", "q", "q", "q", 81, 81, false, true],
+				"r"   : ["KeyR", "r", "r", "r", 82, 82, false, true],
+				"s"   : ["KeyS", "s", "s", "s", 83, 83, false, true],
+				"t"   : ["KeyT", "t", "t", "t", 84, 84, false, true],
+				"u"   : ["KeyU", "u", "u", "u", 85, 85, false, true],
+				"v"   : ["KeyV", "v", "v", "v", 86, 86, false, true],
+				"w"   : ["KeyW", "w", "w", "w", 87, 87, false, true],
+				"x"   : ["KeyX", "x", "x", "x", 88, 88, false, true],
+				"y"   : ["KeyY", "y", "y", "y", 89, 89, false, true],
+				"z"   : ["KeyZ", "z", "z", "z", 90, 90, false, true],
+				"{"   : ["BracketLeft", "{", "{", "[", 219, 219, true, true],
+				"|"   : ["Backslash", "|", "|", "\\", 220, 220, true, true],
+				"}"   : ["BracketRight", "}", "}", "]", 221, 221, true, true],
+				"~"   : ["Backquote", "~", "~", "`", 192, 192, true, true],
+				"F1"  : ["F1", "F1", "", "", 112, 112, false, false],
+				"F2"  : ["F2", "F2", "", "", 113, 113, false, false],
+				"F3"  : ["F3", "F3", "", "", 114, 114, false, false],
+				"F4"  : ["F4", "F4", "", "", 115, 115, false, false],
+				"F5"  : ["F5", "F5", "", "", 116, 116, false, false],
+				"F6"  : ["F6", "F6", "", "", 117, 117, false, false],
+				"F7"  : ["F7", "F7", "", "", 118, 118, false, false],
+				"F8"  : ["F8", "F8", "", "", 119, 119, false, false],
+				"F9"  : ["F9", "F9", "", "", 120, 120, false, false],
+				"F10" : ["F10", "F10", "", "", 121, 121, false, false],
+				"F11" : ["F11", "F11", "", "", 122, 122, false, false],
+				"F12" : ["F12", "F12", "", "", 123, 123, false, false]
+			};
+
+			tiptoe(
+				function sendKeyDown()	{ cdpw.client.Input.dispatchKeyEvent({type : "keyDown", key : KEYMAP[c][1], code : KEYMAP[c][0], nativeVirtualKeyCode : KEYMAP[c][4], windowsVirtualKeyCode : KEYMAP[c][5]}, this); },
+				function sendChar()		{ cdpw.client.Input.dispatchKeyEvent({type : "char", 	key : KEYMAP[c][1], code : KEYMAP[c][0], nativeVirtualKeyCode : KEYMAP[c][4], windowsVirtualKeyCode : KEYMAP[c][5], text : KEYMAP[c][2], unmodifiedText : KEYMAP[c][3]}, this); },	// eslint-disable-line max-len
+				function sendKeyUp()	{ cdpw.client.Input.dispatchKeyEvent({type : "keyUp", 	key : KEYMAP[c][1], code : KEYMAP[c][0], nativeVirtualKeyCode : KEYMAP[c][4], windowsVirtualKeyCode : KEYMAP[c][5]}, this); },
+				cb
+			);
 		}
 
 		// Clicks the given target
