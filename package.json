@@ -1,0 +1,15 @@
+{
+	"name"         : "@sembiance/cdpw",
+	"version"      : "0.0.1",
+	"author"       : "Robert Schultz <robert@cosmicrealms.com>",
+	"description"  : "wrapper around the NPM module chrome-remote-interface",
+	"main"         : "CDPW.js",
+	"dependencies" :
+	{
+		"@sembiance/xbase"        : "file:/mnt/compendium/DevLab/node-modules/xbase",
+		"@sembiance/xutil"        : "file:/mnt/compendium/DevLab/node-modules/xutil",
+		"tiptoe"                  : "file:/mnt/compendium/DevLab/node-modules/tiptoe",
+		"chrome-remote-interface" : "~0.27.0",
+		"rimraf"                  : "~2.6.3"
+	}
+}
