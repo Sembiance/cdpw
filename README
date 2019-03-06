@@ -1,1 +1,6 @@
-Wrapper around the npm module chrome-remote-interface
+So selenium sucks. It ALWAYS has. I mean totally horrible.
+The last straw was the fact that the latest chrome causes issues with the NPM selenium webdriver 3.6.0
+However the 4.0.0 version of the selenium webdriver (which may or may not fix the problem) has been totall rewritten.
+The new way of doing this is HORRIBLE promise laden crap.
+So this is just a simple wrapper around the NPM module chrome-remote-protocol that will make it easy to just control chrome directly
+Goodbye selenium. You won't be missed.
