@@ -12,6 +12,9 @@ const base = require("@sembiance/xbase"),
 	util = require("util"),		// eslint-disable-line no-unused-vars
 	cdp = require("chrome-remote-interface");
 
+// Chrome DevTools Protocol API: https://chromedevtools.github.io/devtools-protocol/tot/Input
+// Chrome command line flags: https://peter.sh/experiments/chromium-command-line-switches/
+
 (function _CDPW()
 {
 	class CDPW
@@ -31,10 +34,10 @@ const base = require("@sembiance/xbase"),
 				},
 				function launchChrome()
 				{
-					const chromeLaunchArgs = ["--user-data-dir=" + cdpw.userDataDir];
+					const chromeLaunchArgs = ["--user-data-dir=" + cdpw.userDataDir, "--disable-infobars", "--disable-notifications", "--disable-suggestions-ui", "--disable-default-apps", "--disable-extensions", "--disable-sync", "--enable-automation"];
 					if(cdpw.headless)
 						chromeLaunchArgs.push("--headless", "--hide-scrollbars", "--disable-gpu", "--window-size=1200,960");
-					chromeLaunchArgs.push("--disable-infobars", "--disable-default-apps", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + cdpw.debugPort);
+					chromeLaunchArgs.push("--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + cdpw.debugPort);
 				
 					runUtil.run("chromium", chromeLaunchArgs, {silent : true, detached : true, env : { DISPLAY : ":0" }}, this);
 				},
@@ -115,6 +118,25 @@ const base = require("@sembiance/xbase"),
 			);
 		}
 
+		// Used to instruct CDPW that the web page has changed to a different page
+		webPageHasChanged(cb)
+		{
+			const cdpw=this;
+
+			tiptoe(
+				function getDocument()
+				{
+					cdpw.client.DOM.getDocument(this);
+				},
+				function saveDocument(doc)
+				{
+					cdpw.document = doc;
+					this();
+				},
+				cb
+			);
+		}
+
 		// Evaluates the given code and returns the result
 		evaluate(expression, cb)
 		{
@@ -142,7 +164,15 @@ const base = require("@sembiance/xbase"),
 		// Runs the passed in function fun continually until it calls it's subcb with a truthy second value or until timeout has passed
 		wait(fun, timeout, cb)
 		{
-			const timeoutid = setTimeout(() => cb(new Error("CDPW.wait timed out")), timeout);
+			const timeoutError = new Error("CDPW.wait timed out (Screenshot written to /tmp/wait_failed_ss.png): " + fun.toString());
+			const timeoutid = setTimeout(() =>
+			{
+				this.client.Page.captureScreenshot({format : "png"}, (err, ss) =>
+				{
+					fs.writeFileSync("/tmp/wait_failed_ss.png", Buffer.from(ss.data, "base64"));
+					cb(timeoutError);
+				});
+			}, timeout);
 
 			function runFunc()
 			{
@@ -170,6 +200,12 @@ const base = require("@sembiance/xbase"),
 			this.evaluate(`window.getComputedStyle(document.querySelector("${selector.replaceAll('"', '\\"')}")).display!=="none"`, (suberr, r) => (suberr ? cb() : cb(undefined, r)));
 		}
 
+		// Returns true if the selector is NOT visible, false otherwise
+		isNotVisible(selector, cb)
+		{
+			this.evaluate(`window.getComputedStyle(document.querySelector("${selector.replaceAll('"', '\\"')}")).display==="none"`, (suberr, r) => (suberr ? cb() : cb(undefined, r)));
+		}
+
 		// Runs the given selector on the document
 		querySelector(selector, cb)
 		{
@@ -189,7 +225,7 @@ const base = require("@sembiance/xbase"),
 		}
 
 		// Returns the XY coordinate of the given target using client side getBoundingClientRect() which may be more accurate or different than the getBoxModel
-		/*getXY(selector, cb, options={})
+		getXY(selector, cb, options={})
 		{
 			// XY offset from top left for where to click. Integer values are absolute pixels, strings percentages are a percentage of the target's width and height
 			if(!options.hasOwnProperty("offset"))
@@ -202,7 +238,6 @@ const base = require("@sembiance/xbase"),
 
 				const r = JSON.parse(rs);
 
-				//console.log(util.inspect(r, {depth : 9, colors : true}));
 				const xy = [r.x, r.y];
 				if(options.offset)
 				{
@@ -212,10 +247,10 @@ const base = require("@sembiance/xbase"),
 				//console.log(selector, r, xy);
 				cb(undefined, xy);
 			});
-		}*/
+		}
 
-		// Returns the XY coordinate of the given selector
-		getXY(selector, cb, options={})
+		// Returns the XY coordinate of the given selector. This uses getBoxModel() which can be wrong when things are rotated, using the client side version above is more reliable
+		/*getXY(selector, cb, options={})
 		{
 			const cdpw=this;
 
@@ -235,9 +270,13 @@ const base = require("@sembiance/xbase"),
 				function returnResults(err, r)
 				{
 					if(err)
-						return cb(err);
+						return cb(((err===true && r) ? (new Error("CDPW.getXY('" + selector + "') failed with: " + JSON.stringify(r))) : err));
+
+					console.log(selector, util.inspect(r, {depth : 9, colors : true}));
 
 					const xy = r.model.content.slice(0, 2);
+					//xy[1] += (r.model.content[1]-r.model.margin[1]);
+
 					if(options.offset)
 					{
 						const offsets = options.offset.map((v, i) => ((typeof v==="string" && v.endsWith("%")) ? (((+v.substring(v, v.length-1))/100)*r.model[(["width", "height"][i])]) : v));
@@ -247,7 +286,7 @@ const base = require("@sembiance/xbase"),
 					cb(undefined, xy);
 				}
 			);
-		}
+		}*/
 
 		// Perform a mouse event on the given target (string selector, array of x/y coords or an integer nodeId)
 		mouseEvent(target, type, cb, options={})
@@ -296,16 +335,36 @@ const base = require("@sembiance/xbase"),
 			this.mouseEvent(target, "mouseMoved", ...args);
 		}
 
-		// Presses a single key on the keyboard
-		pressKey(c, cb)
+		// Drag the given dragTarget over to the dropTarget
+		dnd(dragTarget, dropTarget, cb, options)
 		{
 			const cdpw=this;
+
+			tiptoe(
+				function moveToDrag()	{ cdpw.mouseMove(dragTarget, this, options); },
+				function pressMouse()	{ cdpw.mouseDown(dragTarget, this, options); },
+				function delayMove() 	{ setTimeout(this, 50); },
+				function moveToDrop()	{ cdpw.mouseMove(dropTarget, this, options); },
+				function delayDrop() 	{ setTimeout(this, 50); },
+				function releaseMouse()	{ cdpw.mouseUp(dropTarget, this, options); },
+				cb
+			);
+		}
+
+		// Presses a single key on the keyboard
+		pressKey(c, cb, options={})
+		{
+			const cdpw=this;
+
+			// Keys came from: https://github.com/chromedp/chromedp/blob/master/kb/keys.go
 			const KEYMAP =
 			{
-				"\b"  : ["Backspace", "Backspace", "", "", 8, 8, false, false],
-				"\t"  : ["Tab", "Tab", "", "", 9, 9, false, false],
-				"\r"  : ["Enter", "Enter", "\r", "\r", 13, 13, false, true],
-				"\u001b" : ["Escape", "Escape", "", "", 27, 27, false, false],
+				"Backspace" : ["Backspace", "Backspace", "", "", 8, 8, false, false],
+				"Tab"       : ["Tab", "Tab", "", "", 9, 9, false, false],
+				"Enter"     : ["Enter", "Enter", "\r", "\r", 13, 13, false, true],
+				"Escape"    : ["Escape", "Escape", "", "", 27, 27, false, false],
+				"Delete"    : ["Delete", "Delete", "", "", 46, 46, false, false],
+				"Pause"     : ["Pause", "Pause", "", "", 19, 19, false, false],
 				" "   : ["Space", " ", " ", " ", 32, 32, false, true],
 				"!"   : ["Digit1", "!", "!", "1", 49, 49, true, true],
 				'"'   : ["Quote", "\"", "\"", "'", 222, 222, true, true],
@@ -412,15 +471,59 @@ const base = require("@sembiance/xbase"),
 				"F9"  : ["F9", "F9", "", "", 120, 120, false, false],
 				"F10" : ["F10", "F10", "", "", 121, 121, false, false],
 				"F11" : ["F11", "F11", "", "", 122, 122, false, false],
-				"F12" : ["F12", "F12", "", "", 123, 123, false, false]
+				"F12" : ["F12", "F12", "", "", 123, 123, false, false],
+				"ArrowDown"  : ["ArrowDown", "ArrowDown", "", "", 40, 40, false, false],
+				"ArrowLeft"  : ["ArrowLeft", "ArrowLeft", "", "", 37, 37, false, false],
+				"ArrowRight" : ["ArrowRight", "ArrowRight", "", "", 39, 39, false, false],
+				"ArrowUp"    : ["ArrowUp", "ArrowUp", "", "", 38, 38, false, false],
+				"End"      : ["End", "End", "", "", 35, 35, false, false],
+				"Home"     : ["Home", "Home", "", "", 36, 36, false, false],
+				"PageDown" : ["PageDown", "PageDown", "", "", 34, 34, false, false],
+				"PageUp"   : ["PageUp", "PageUp", "", "", 33, 33, false, false]
 			};
 
+			const eventOptions =
+			{
+				key                   : KEYMAP[c][1],
+				code                  : KEYMAP[c][0],
+				nativeVirtualKeyCode  : KEYMAP[c][4],
+				windowsVirtualKeyCode : KEYMAP[c][5]
+			};
+
+			if(options.alt)
+				eventOptions.modifiers = 1;
+			else if(options.ctrl)
+				eventOptions.modifiers = 2;
+			else if(options.meta)
+				eventOptions.modifiers = 4;
+			else if(options.shift)
+				eventOptions.modifiers = 8;
+
+			if(["alt", "ctrl", "meta", "shift"].filter(v => options.hasOwnProperty(v)).length>1)
+				return cb(new Error("CDPW.sendChar does not currently support more than 1 modifier at a time. Was lazy."));
+
 			tiptoe(
-				function sendKeyDown()	{ cdpw.client.Input.dispatchKeyEvent({type : "keyDown", key : KEYMAP[c][1], code : KEYMAP[c][0], nativeVirtualKeyCode : KEYMAP[c][4], windowsVirtualKeyCode : KEYMAP[c][5]}, this); },
-				function sendChar()		{ cdpw.client.Input.dispatchKeyEvent({type : "char", 	key : KEYMAP[c][1], code : KEYMAP[c][0], nativeVirtualKeyCode : KEYMAP[c][4], windowsVirtualKeyCode : KEYMAP[c][5], text : KEYMAP[c][2], unmodifiedText : KEYMAP[c][3]}, this); },	// eslint-disable-line max-len
-				function sendKeyUp()	{ cdpw.client.Input.dispatchKeyEvent({type : "keyUp", 	key : KEYMAP[c][1], code : KEYMAP[c][0], nativeVirtualKeyCode : KEYMAP[c][4], windowsVirtualKeyCode : KEYMAP[c][5]}, this); },
+				function sendKeyDown()	{ cdpw.client.Input.dispatchKeyEvent({...eventOptions, type : "keyDown" }, this); },
+				function sendChar()
+				{
+					if(KEYMAP[c][2] && KEYMAP[c][2]!=="\r")
+						cdpw.client.Input.dispatchKeyEvent({...eventOptions, type : "char", text : KEYMAP[c][2], unmodifiedText : KEYMAP[c][3]}, this);
+					else
+						this();
+				},
+				function sendKeyUp()	{ cdpw.client.Input.dispatchKeyEvent({...eventOptions, type : "keyUp" }, this); },
 				cb
 			);
+		}
+
+		// Press several keys
+		pressKeys(keys, cb, options={})
+		{
+			const cdpw=this;
+			if(!options.hasOwnProperty("interval"))
+				options.interval = 10;
+
+			(Array.isArray(keys) ? keys : keys.split("")).serialForEach((key, subcb) => cdpw.pressKey(key, err => (err ? subcb(err) : setTimeout(subcb, options.interval))), cb);
 		}
 
 		// Clicks the given target
@@ -448,6 +551,12 @@ const base = require("@sembiance/xbase"),
 				},
 				cb
 			);
+		}
+
+		// Right clicks on the target
+		rightClick(target, cb, options)
+		{
+			this.click(target, cb, {...options, button : "right"});
 		}
 
 		// Double clicks the given target
