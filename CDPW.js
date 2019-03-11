@@ -2,7 +2,7 @@
 
 /* eslint-disable consistent-this */
 
-const base = require("@sembiance/xbase"),
+const XU = require("@sembiance/xu"),
 	runUtil = require("@sembiance/xutil").run,
 	netUtil = require("@sembiance/xutil").net,
 	tiptoe = require("tiptoe"),
