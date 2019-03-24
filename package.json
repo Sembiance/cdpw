@@ -6,7 +6,7 @@
 	"main"         : "CDPW.js",
 	"dependencies" :
 	{
-		"@sembiance/xu"        : "file:/mnt/compendium/DevLab/node-modules/xu",
+		"@sembiance/xu"           : "file:/mnt/compendium/DevLab/node-modules/xu",
 		"@sembiance/xutil"        : "file:/mnt/compendium/DevLab/node-modules/xutil",
 		"tiptoe"                  : "file:/mnt/compendium/DevLab/node-modules/tiptoe",
 		"chrome-remote-interface" : "~0.27.0",
