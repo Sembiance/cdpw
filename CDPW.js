@@ -8,6 +8,7 @@ const XU = require("@sembiance/xu"),
 	tiptoe = require("tiptoe"),
 	fs = require("fs"),
 	rimraf = require("rimraf"),
+	debounce = require("./debounce.js").debounce,
 	fileUtil = require("@sembiance/xutil").file,
 	util = require("util"),		// eslint-disable-line no-unused-vars
 	cdp = require("chrome-remote-interface");
@@ -22,6 +23,7 @@ const XU = require("@sembiance/xu"),
 		constructor(_headless, cb)
 		{
 			const cdpw=this;
+			cdpw.eventListeners = {};
 			cdpw.headless = !!_headless;
 			cdpw.debugPort = Math.randomInt(5001, 32000);
 
@@ -58,13 +60,14 @@ const XU = require("@sembiance/xu"),
 						return cb(err);
 					
 					cdpw.client = client;
+					cdpw.client.on("event", cdpw.eventHandler.bind(cdpw));
 					cb(undefined, client);
 				}
 			);
 		}
 
 		// Opens the given url with the given options
-		openURL(url, cb, options={})
+		open(cb, options={})
 		{
 			const deviceMetrics = {
 				deviceScaleFactor : 0,
@@ -96,6 +99,16 @@ const XU = require("@sembiance/xu"),
 					else
 						this();
 				},
+				cb
+			);
+		}
+
+		// Navigate to the given page
+		navigate(url, cb, options={})
+		{
+			const cdpw=this;
+
+			tiptoe(
 				function navigate()
 				{
 					cdpw.client.Page.navigate({url}, this);
@@ -585,6 +598,28 @@ const XU = require("@sembiance/xu"),
 			);
 		}
 
+		// Will listen for the given chrome devtools protocol event
+		listen(eventName, handler)
+		{
+			if(!this.eventListeners.hasOwnProperty(eventName))
+				this.eventListeners[eventName] = [];
+			
+			this.eventListeners[eventName].pushUnique(handler);
+		}
+
+		// Will remove the listener handler for the given chrome devtools protocol event
+		unlisten(eventName, handler)
+		{
+			this.eventListeners[eventName].removeOnce(handler);
+		}
+
+		// Called when an event happens
+		eventHandler(msg)
+		{
+			if(this.eventListeners.hasOwnProperty(msg.method))
+				this.eventListeners[msg.method].forEach(handler => handler(msg));
+		}
+
 		// Closes the cdp client first, then kills the chromium child process
 		destroy(cb)
 		{
@@ -616,6 +651,134 @@ const XU = require("@sembiance/xu"),
 			);
 		}
 
+		// Will save any stream of network responses to disk. Useful for saving streaming video to disk
+		// options.match.mimeType = "video/mp2t"	By default it matches any responses with this mimeType
+		// options.finishAfter = XU.SECOND*10		How long to wait for more data before finishing the file and calling the cb
+		saveResponsesToDisk(filePath, _options, _cb)
+		{
+			const options = { match : { mimeType : "video/mp2t" }, finishAfter : XU.SECOND*10 };
+			const cb = (_cb || _options);
+			if(_cb)
+				Object.merge(options, _options);
+
+			const requestIds = [];
+			const dataHandlers = {};
+			const dataContent = {};
+			const SAVE_TO_DISK_INTERVAL = 200;
+
+			const cdpw=this;
+			cdpw.listen("Network.responseReceived", saveEventHandler);
+			cdpw.listen("Network.dataReceived", saveEventHandler);
+
+			function saveEventHandler(msg)
+			{
+				if(msg.method==="Network.responseReceived")
+				{
+					if(options.match.mimeType && msg.params.response.mimeType!==options.match.mimeType)
+						return;
+
+					// Add future match types here, such as filenames, urls, etc
+					
+					requestIds.push(msg.params.requestId);
+					dataHandlers[msg.params.requestId] = debounce(() => getResponseData(msg.params.requestId), 500);
+					dataContent[msg.params.requestId] = null;
+				}
+
+				if(msg.method==="Network.dataReceived")
+				{
+					if(!dataContent.hasOwnProperty(msg.params.requestId))
+						return;
+
+					dataHandlers[msg.params.requestId]();
+				}
+			}
+
+			function getResponseData(requestId)
+			{
+				cdpw.client.Network.getResponseBody({requestId}, (err, result) =>
+				{
+					if(err)
+						return finish(err);
+					
+					if(result && result.body)
+						dataContent[requestId] = Buffer.from(result.body, (result.base64Encoded ? "base64" : "utf8"));
+				});
+			}
+
+			let saveToDiskTimeoutid = null;
+
+			let fd = null;
+			tiptoe(
+				function openTargetFile() { fs.open(filePath, "w", this); },
+				function startSaving(err, _fd)
+				{
+					fd = _fd;
+
+					if(err)
+						return finish(err);
+	
+					saveToDiskTimeoutid = setTimeout(saveToDiskIfNeeded, SAVE_TO_DISK_INTERVAL);
+				}
+			);
+
+			let finishTimeoutid = null;
+
+			function saveToDiskIfNeeded()
+			{
+				saveToDiskTimeoutid = null;
+
+				if(requestIds.length===0 || !dataContent[requestIds[0]])
+				{
+					saveToDiskTimeoutid = setTimeout(saveToDiskIfNeeded, SAVE_TO_DISK_INTERVAL);
+					return;
+				}
+
+				const requestId = requestIds.shift();
+
+				tiptoe(
+					function writeData() { fs.write(fd, dataContent[requestId], this); },
+					function reschedule(err)
+					{
+						if(err)
+							return finish(err);
+
+						console.log("[%s] Saved %d bytes to disk", requestId, dataContent[requestId].length);
+						
+						delete dataContent[requestId];
+						delete dataHandlers[requestId];
+
+						saveToDiskTimeoutid = setTimeout(saveToDiskIfNeeded, SAVE_TO_DISK_INTERVAL);
+
+						if(finishTimeoutid!==null)
+							clearTimeout(finishTimeoutid);
+						
+						finishTimeoutid = setTimeout(finishSaving, options.finishAfter);
+					}
+				);
+			}
+
+			function finishSaving()
+			{
+				finishTimeoutid = null;
+
+				if(saveToDiskTimeoutid!==null)
+				{
+					clearTimeout(saveToDiskTimeoutid);
+					saveToDiskTimeoutid = null;
+				}
+
+				fs.close(fd, finish);
+			}
+
+			function finish(err)
+			{
+				cdpw.unlisten("Network.responseReceived", saveEventHandler);
+				cdpw.unlisten("Network.dataReceived", saveEventHandler);
+
+				cb(err);
+			}
+		}
+
 		// Capture a screenshot
 		static captureScreenshot(url, _options, _cb)
 		{
@@ -628,9 +791,13 @@ const XU = require("@sembiance/xu"),
 					return cb(cdpwErr);
 				
 				tiptoe(
+					function init()
+					{
+						cdpw.open(this, {width : (options.width || 1280), height : (options.height || 1024)});
+					},
 					function openSite()
 					{
-						cdpw.openURL(url, this, {delay : (options.delay || XU.SECOND), width : (options.width || 1280), height : (options.height || 1024)});
+						cdpw.navigate(url, this, {delay : (options.delay || XU.SECOND)});
 					},
 					function capture()
 					{
