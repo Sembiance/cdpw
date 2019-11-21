@@ -693,7 +693,7 @@ const XU = require("@sembiance/xu"),
 					// Add future match types here, such as filenames, urls, etc
 					
 					requestIds.push(msg.params.requestId);
-					dataHandlers[msg.params.requestId] = debounce(() => getResponseData(msg.params.requestId), 500);
+					dataHandlers[msg.params.requestId] = debounce(() => getResponseData(msg.params.requestId), XU.SECOND);
 					dataContent[msg.params.requestId] = null;
 				}
 
@@ -707,22 +707,19 @@ const XU = require("@sembiance/xu"),
 
 				function getResponseData(requestId)
 				{
-					setTimeout(() =>
+					cdpw.client.Network.getResponseBody({requestId}, (err, result) =>
 					{
-						cdpw.client.Network.getResponseBody({requestId}, (err, result) =>
+						if(err)
 						{
-							if(err)
-							{
-								console.error("saveEventHandler.getResponseData");
-								console.trace();
-								console.error(requestId, err, result);
-								//return finish(err);
-							}
-							
-							if(result && result.body)
-								dataContent[requestId] = Buffer.from(result.body, (result.base64Encoded ? "base64" : "utf8"));
-						});
-					}, XU.SECOND);
+							console.error("saveEventHandler.getResponseData");
+							console.trace();
+							console.error(requestId, err, result);
+							//return finish(err);
+						}
+						
+						if(result && result.body)
+							dataContent[requestId] = Buffer.from(result.body, (result.base64Encoded ? "base64" : "utf8"));
+					});
 				}
 			}
 
