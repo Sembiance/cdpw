@@ -67,16 +67,18 @@ const XU = require("@sembiance/xu"),
 		}
 
 		// Opens the given url with the given options
-		open(cb, options={})
+		open(_options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb, {width : (this.headless ? 1200 : 0), height : (this.headless ? 960 : 0)});
+
 			const deviceMetrics = {
 				deviceScaleFactor : 0,
 				mobile            : false,
 				fitWindow         : false
 			};
 
-			deviceMetrics.width = options.width || (this.headless ? 1200 : 0);
-			deviceMetrics.height = options.height || (this.headless ? 960 : 0);
+			deviceMetrics.width = options.width;
+			deviceMetrics.height = options.height;
 
 			const cdpw = this;
 
@@ -104,8 +106,10 @@ const XU = require("@sembiance/xu"),
 		}
 
 		// Navigate to the given page
-		navigate(url, cb, options={})
+		navigate(url, _options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb, {delay : 0});
+
 			const cdpw=this;
 
 			tiptoe(
@@ -116,7 +120,7 @@ const XU = require("@sembiance/xu"),
 				function waitForPageToLoad()
 				{
 					const self=this;
-					cdpw.client.Page.loadEventFired(() => setTimeout(self, (options.delay || 0)));
+					cdpw.client.Page.loadEventFired(() => setTimeout(self, options.delay));
 				},
 				function getDocument()
 				{
@@ -238,11 +242,11 @@ const XU = require("@sembiance/xu"),
 		}
 
 		// Returns the XY coordinate of the given target using client side getBoundingClientRect() which may be more accurate or different than the getBoxModel
-		getXY(selector, cb, options={})
+		getXY(selector, _options, _cb)
 		{
-			// XY offset from top left for where to click. Integer values are absolute pixels, strings percentages are a percentage of the target's width and height
-			if(!options.hasOwnProperty("offset"))
-				options.offset = ["50%", "50%"];
+			// XY offset from top left for where to click. Integer values are absolute pixels, strings percentages are a percentage of the target's width and height.
+			// Can pass in offset : null or offset: undefined to not specific an offset (then top left corner will be used)
+			const {options, cb} = XU.optionscb(_options, _cb, {offset : ["50%", "50%"]});
 
 			this.evaluate(`JSON.stringify(document.querySelector("${selector.replaceAll('"', '\\"')}").getBoundingClientRect())`, (err, rs) =>
 			{
@@ -257,19 +261,19 @@ const XU = require("@sembiance/xu"),
 					const offsets = options.offset.map((v, i) => ((typeof v==="string" && v.endsWith("%")) ? (((+v.substring(v, v.length-1))/100)*r[(["width", "height"][i])]) : v));
 					xy.mapInPlace((xory, i) => xory+offsets[i]);
 				}
-				//console.log(selector, r, xy);
+
 				cb(undefined, xy);
 			});
 		}
 
 		// Returns the XY coordinate of the given selector. This uses getBoxModel() which can be wrong when things are rotated, using the client side version above is more reliable
-		/*getXY(selector, cb, options={})
+		/*getXY(selector, _options, _cb)
 		{
-			const cdpw=this;
+			// XY offset from top left for where to click. Integer values are absolute pixels, strings percentages are a percentage of the target's width and height.
+			// Can pass in offset : null or offset: undefined to not specific an offset (then top left corner will be used)
+			const {options, cb} = XU.optionscb(_options, _cb, {offset : ["50%", "50%"]});
 
-			// XY offset from top left for where to click. Integer values are absolute pixels, strings percentages are a percentage of the target's width and height
-			if(!options.hasOwnProperty("offset"))
-				options.offset = ["50%", "50%"];
+			const cdpw=this;
 
 			tiptoe(
 				function getNode()
@@ -302,8 +306,10 @@ const XU = require("@sembiance/xu"),
 		}*/
 
 		// Perform a mouse event on the given target (string selector, array of x/y coords or an integer nodeId)
-		mouseEvent(target, type, cb, options={})
+		mouseEvent(target, type, _options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb, {button : "left"});
+
 			const cdpw = this;
 
 			tiptoe(
@@ -312,7 +318,7 @@ const XU = require("@sembiance/xu"),
 					if(Array.isArray(target))
 						this(undefined, target);
 					else
-						cdpw.getXY(target, this, options);
+						cdpw.getXY(target, options, this);
 				},
 				function dispatchMouseEvent(xy)
 				{
@@ -320,7 +326,7 @@ const XU = require("@sembiance/xu"),
 						type,
 						x          : xy[0],
 						y          : xy[1],
-						button     : (options.button || "left"),
+						button     : options.button,
 						clickCount : 1
 					};
 
@@ -349,24 +355,28 @@ const XU = require("@sembiance/xu"),
 		}
 
 		// Drag the given dragTarget over to the dropTarget
-		dnd(dragTarget, dropTarget, cb, options)
+		dnd(dragTarget, dropTarget, _options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb);
+
 			const cdpw=this;
 
 			tiptoe(
-				function moveToDrag()	{ cdpw.mouseMove(dragTarget, this, options); },
-				function pressMouse()	{ cdpw.mouseDown(dragTarget, this, options); },
+				function moveToDrag()	{ cdpw.mouseMove(dragTarget, options, this); },
+				function pressMouse()	{ cdpw.mouseDown(dragTarget, options, this); },
 				function delayMove() 	{ setTimeout(this, 50); },
-				function moveToDrop()	{ cdpw.mouseMove(dropTarget, this, options); },
+				function moveToDrop()	{ cdpw.mouseMove(dropTarget, options, this); },
 				function delayDrop() 	{ setTimeout(this, 50); },
-				function releaseMouse()	{ cdpw.mouseUp(dropTarget, this, options); },
+				function releaseMouse()	{ cdpw.mouseUp(dropTarget, options, this); },
 				cb
 			);
 		}
 
 		// Presses a single key on the keyboard
-		pressKey(c, cb, options={})
+		pressKey(c, _options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb);
+
 			const cdpw=this;
 
 			// Keys came from: https://github.com/chromedp/chromedp/blob/master/kb/keys.go
@@ -530,18 +540,20 @@ const XU = require("@sembiance/xu"),
 		}
 
 		// Press several keys
-		pressKeys(keys, cb, options={})
+		pressKeys(keys, _options, _cb)
 		{
-			const cdpw=this;
-			if(!options.hasOwnProperty("interval"))
-				options.interval = 10;
+			const {options, cb} = XU.optionscb(_options, _cb, {interval : 10});
 
-			(Array.isArray(keys) ? keys : keys.split("")).serialForEach((key, subcb) => cdpw.pressKey(key, err => (err ? subcb(err) : setTimeout(subcb, options.interval))), cb);
+			const cdpw=this;
+
+			(Array.isArray(keys) ? keys : keys.split("")).serialForEach((key, subcb) => cdpw.pressKey(key, options, err => (err ? subcb(err) : setTimeout(subcb, options.interval))), cb);
 		}
 
 		// Clicks the given target
-		click(target, cb, options)
+		click(target, _options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb);
+
 			const cdpw=this;
 
 			tiptoe(
@@ -550,15 +562,15 @@ const XU = require("@sembiance/xu"),
 					if(Array.isArray(target))
 						this(undefined, target);
 					else
-						cdpw.getXY(target, this, options);
+						cdpw.getXY(target, options, this);
 				},
 				function performClick(xy)
 				{
 					tiptoe(
-						function move()		{ cdpw.mouseMove(xy, this, options); },
-						function press() 	{ cdpw.mouseDown(xy, this, options); },
+						function move()		{ cdpw.mouseMove(xy, options, this); },
+						function press() 	{ cdpw.mouseDown(xy, options, this); },
 						function wait() 	{ setTimeout(this, 50); },
-						function release() 	{ cdpw.mouseUp(xy, this, options); },
+						function release() 	{ cdpw.mouseUp(xy, options, this); },
 						this
 					);
 				},
@@ -567,14 +579,18 @@ const XU = require("@sembiance/xu"),
 		}
 
 		// Right clicks on the target
-		rightClick(target, cb, options)
+		rightClick(target, _options, _cb)
 		{
-			this.click(target, cb, {...options, button : "right"});
+			const {options, cb} = XU.optionscb(_options, _cb);
+
+			this.click(target, {...options, button : "right"}, cb);
 		}
 
 		// Double clicks the given target
-		doubleClick(target, cb, options)
+		doubleClick(target, _options, _cb)
 		{
+			const {options, cb} = XU.optionscb(_options, _cb);
+
 			const cdpw=this;
 
 			tiptoe(
@@ -583,14 +599,14 @@ const XU = require("@sembiance/xu"),
 					if(Array.isArray(target))
 						this(undefined, target);
 					else
-						cdpw.getXY(target, this, options);
+						cdpw.getXY(target, options, this);
 				},
 				function performDoubleClick(xy)
 				{
 					tiptoe(
-						function clickOne() 	{ cdpw.click(xy, this, options); },
+						function clickOne() 	{ cdpw.click(xy, options, this); },
 						function wait() 		{ setTimeout(this, 150); },
-						function clickTwo() 	{ cdpw.click(xy, this, options); },
+						function clickTwo() 	{ cdpw.click(xy, options, this); },
 						this
 					);
 				},
@@ -653,13 +669,10 @@ const XU = require("@sembiance/xu"),
 
 		// Will save any stream of network responses to disk. Useful for saving streaming video to disk
 		// options.match.mimeType = "video/mp2t"	By default it matches any responses with this mimeType
-		// options.finishAfter = XU.SECOND*10		How long to wait for more data before finishing the file and calling the cb
+		// options.finishAfter = XU.MINUTE			How long to wait for more data before finishing the file and calling the cb
 		saveResponsesToDisk(filePath, _options, _cb)
 		{
-			const options = { match : { mimeType : "video/mp2t" }, finishAfter : XU.SECOND*10 };
-			const cb = (_cb || _options);
-			if(_cb)
-				Object.merge(options, _options);
+			const {options, cb} = XU.optionscb(_options, _cb, { match : { mimeType : "video/mp2t" }, finishAfter : XU.MINUTE });
 
 			const requestIds = [];
 			const dataHandlers = {};
@@ -691,18 +704,26 @@ const XU = require("@sembiance/xu"),
 
 					dataHandlers[msg.params.requestId]();
 				}
-			}
 
-			function getResponseData(requestId)
-			{
-				cdpw.client.Network.getResponseBody({requestId}, (err, result) =>
+				function getResponseData(requestId)
 				{
-					if(err)
-						return finish(err);
-					
-					if(result && result.body)
-						dataContent[requestId] = Buffer.from(result.body, (result.base64Encoded ? "base64" : "utf8"));
-				});
+					setTimeout(() =>
+					{
+						cdpw.client.Network.getResponseBody({requestId}, (err, result) =>
+						{
+							if(err)
+							{
+								console.error("saveEventHandler.getResponseData");
+								console.trace();
+								console.error(requestId, err, result);
+								//return finish(err);
+							}
+							
+							if(result && result.body)
+								dataContent[requestId] = Buffer.from(result.body, (result.base64Encoded ? "base64" : "utf8"));
+						});
+					}, XU.SECOND);
+				}
 			}
 
 			let saveToDiskTimeoutid = null;
@@ -715,7 +736,12 @@ const XU = require("@sembiance/xu"),
 					fd = _fd;
 
 					if(err)
+					{
+						console.error("startSaving");
+						console.trace();
+						console.error(filePath, err, _fd);
 						return finish(err);
+					}
 	
 					saveToDiskTimeoutid = setTimeout(saveToDiskIfNeeded, SAVE_TO_DISK_INTERVAL);
 				}
@@ -742,7 +768,7 @@ const XU = require("@sembiance/xu"),
 						if(err)
 							return finish(err);
 
-						console.log("[%s] Saved %d bytes to disk", requestId, dataContent[requestId].length);
+						//console.log("[%d] [%s] Saved %s bytes to disk", Date.now(), requestId, dataContent[requestId].length.toLocaleString());
 						
 						delete dataContent[requestId];
 						delete dataHandlers[requestId];
@@ -772,18 +798,40 @@ const XU = require("@sembiance/xu"),
 
 			function finish(err)
 			{
+				if(err)
+				{
+					console.trace();
+					console.error(arguments);		// eslint-disable-line prefer-rest-params
+
+					cdpw.client.Page.captureScreenshot({format : "png"}, (sserr, ss) =>
+					{
+						if(sserr)
+						{
+							console.trace();
+							console.error(sserr);
+							console.error("Failed to capture screenshot of page in failure.");
+							return cb(err);
+						}
+
+						fs.writeFileSync("/tmp/saveResponseToDisk_failed_ss.png", Buffer.from(ss.data, "base64"));
+
+						return cb(err);
+					});
+
+					return;
+				}
+
 				cdpw.unlisten("Network.responseReceived", saveEventHandler);
 				cdpw.unlisten("Network.dataReceived", saveEventHandler);
 
-				cb(err);
+				cb();
 			}
 		}
 
 		// Capture a screenshot
 		static captureScreenshot(url, _options, _cb)
 		{
-			const options = _cb ? _options : {};
-			const cb = (_cb || _options);
+			const {options, cb} = XU.optionscb(_options, _cb, {width : 1280, height : 1024, delay : XU.SECOND});
 
 			const cdpw = new CDPW(true, (cdpwErr, client) =>
 			{
@@ -793,11 +841,11 @@ const XU = require("@sembiance/xu"),
 				tiptoe(
 					function init()
 					{
-						cdpw.open(this, {width : (options.width || 1280), height : (options.height || 1024)});
+						cdpw.open({width : options.width, height : options.height}, this);
 					},
 					function openSite()
 					{
-						cdpw.navigate(url, this, {delay : (options.delay || XU.SECOND)});
+						cdpw.navigate(url, {delay : options.delay}, this);
 					},
 					function capture()
 					{

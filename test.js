@@ -20,7 +20,7 @@ CDPW.captureScreenshot("http://worldofsolitaire.com", {width : 1024, height : 76
 
 	fs.writeFile(SCREENSHOT_PATH, ss, () =>
 	{
-		console.log("Examine %s to see if it worked, should be a screenshot of worldofsolitaire.com", path.basename(SCREENSHOT_PATH));
+		console.log("Examine %s to see if it worked, should be a 1024x768 screenshot of worldofsolitaire.com", path.basename(SCREENSHOT_PATH));
 		process.exit(0);
 	});
 });
