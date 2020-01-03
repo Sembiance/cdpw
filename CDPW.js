@@ -1,5 +1,4 @@
 "use strict";
-
 /* eslint-disable consistent-this */
 
 const XU = require("@sembiance/xu"),
@@ -8,7 +7,6 @@ const XU = require("@sembiance/xu"),
 	tiptoe = require("tiptoe"),
 	fs = require("fs"),
 	rimraf = require("rimraf"),
-	debounce = require("./debounce.js").debounce,
 	fileUtil = require("@sembiance/xutil").file,
 	util = require("util"),		// eslint-disable-line no-unused-vars
 	cdp = require("chrome-remote-interface");
@@ -675,13 +673,12 @@ const XU = require("@sembiance/xu"),
 			const {options, cb} = XU.optionscb(_options, _cb, { match : { mimeType : "video/mp2t" }, finishAfter : XU.MINUTE });
 
 			const requestIds = [];
-			const dataHandlers = {};
 			const dataContent = {};
 			const SAVE_TO_DISK_INTERVAL = 200;
 
 			const cdpw=this;
 			cdpw.listen("Network.responseReceived", saveEventHandler);
-			cdpw.listen("Network.dataReceived", saveEventHandler);
+			cdpw.listen("Network.loadingFinished", saveEventHandler);
 
 			function saveEventHandler(msg)
 			{
@@ -693,20 +690,13 @@ const XU = require("@sembiance/xu"),
 					// Add future match types here, such as filenames, urls, etc
 					
 					requestIds.push(msg.params.requestId);
-					dataHandlers[msg.params.requestId] = debounce(() => getResponseData(msg.params.requestId), XU.SECOND);
 					dataContent[msg.params.requestId] = null;
 				}
 
-				if(msg.method==="Network.dataReceived")
+				if(msg.method==="Network.loadingFinished")
 				{
-					if(!dataContent.hasOwnProperty(msg.params.requestId))
-						return;
+					const requestId = msg.params.requestId;
 
-					dataHandlers[msg.params.requestId]();
-				}
-
-				function getResponseData(requestId)
-				{
 					cdpw.client.Network.getResponseBody({requestId}, (err, result) =>
 					{
 						if(err)
@@ -762,13 +752,12 @@ const XU = require("@sembiance/xu"),
 					function writeData() { fs.write(fd, dataContent[requestId], this); },
 					function reschedule(err)
 					{
+						//console.log("[%s] [%s] Saved %s bytes to disk", moment().format("ddd MMM Do, YYYY - H:mm:ss"), requestId, dataContent[requestId].length.toLocaleString(), err);
+
 						if(err)
 							return finish(err);
-
-						//console.log("[%d] [%s] Saved %s bytes to disk", Date.now(), requestId, dataContent[requestId].length.toLocaleString());
 						
 						delete dataContent[requestId];
-						delete dataHandlers[requestId];
 
 						saveToDiskTimeoutid = setTimeout(saveToDiskIfNeeded, SAVE_TO_DISK_INTERVAL);
 
@@ -819,7 +808,7 @@ const XU = require("@sembiance/xu"),
 				}
 
 				cdpw.unlisten("Network.responseReceived", saveEventHandler);
-				cdpw.unlisten("Network.dataReceived", saveEventHandler);
+				cdpw.unlisten("Network.loadingFinished", saveEventHandler);
 
 				cb();
 			}
