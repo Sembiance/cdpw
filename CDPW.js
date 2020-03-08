@@ -6,7 +6,6 @@ const XU = require("@sembiance/xu"),
 	netUtil = require("@sembiance/xutil").net,
 	tiptoe = require("tiptoe"),
 	fs = require("fs"),
-	rimraf = require("rimraf"),
 	fileUtil = require("@sembiance/xutil").file,
 	util = require("util"),		// eslint-disable-line no-unused-vars
 	cdp = require("chrome-remote-interface");
@@ -659,7 +658,7 @@ const XU = require("@sembiance/xu"),
 				},
 				function cleanupUserDir()
 				{
-					rimraf(cdpw.userDataDir, this);
+					fileUtil.unlink(cdpw.userDataDir, this);
 				},
 				cb
 			);

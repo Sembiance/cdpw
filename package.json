@@ -10,7 +10,6 @@
 		"@sembiance/xutil"        : "file:/mnt/compendium/DevLab/node-modules/xutil",
 		"chrome-remote-interface" : "~0.28.1",
 		"moment"                  : "~2.24.0",
-		"rimraf"                  : "~3.0.0",
 		"tiptoe"                  : "file:/mnt/compendium/DevLab/node-modules/tiptoe"
 	}
 }
