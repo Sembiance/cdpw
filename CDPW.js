@@ -33,17 +33,12 @@ const XU = require("@sembiance/xu"),
 				},
 				function launchChrome()
 				{
-					const chromeLaunchArgs = ["--user-data-dir=" + cdpw.userDataDir, "--disable-infobars", "--disable-notifications", "--disable-suggestions-ui", "--disable-default-apps", "--disable-extensions", "--disable-sync", "--enable-automation"];
+					const chromeLaunchArgs = [`--user-data-dir=${cdpw.userDataDir}`, "--disable-infobars", "--disable-notifications", "--disable-suggestions-ui", "--disable-default-apps", "--disable-extensions", "--disable-sync", "--enable-automation"];
 					if(cdpw.headless)
 						chromeLaunchArgs.push("--headless", "--hide-scrollbars", "--disable-gpu", "--window-size=1200,960");
-					chromeLaunchArgs.push("--remote-debugging-address=127.0.0.1", "--remote-debugging-port=" + cdpw.debugPort);
+					chromeLaunchArgs.push("--remote-debugging-address=127.0.0.1", `--remote-debugging-port=${cdpw.debugPort}`);
 				
-					runUtil.run("chromium", chromeLaunchArgs, {silent : true, detached : true, env : { DISPLAY : ":0" }}, this);
-				},
-				function waitForConnection(cp)
-				{
-					cdpw.cp = cp;
-
+					cdpw.cp = runUtil.run("chromium", chromeLaunchArgs, {silent : true, detached : true, env : { DISPLAY : ":0" }});
 					cdpw.cp.on("error", this);
 					netUtil.waitForConnection("127.0.0.1", cdpw.debugPort, this);
 				},
@@ -168,7 +163,7 @@ const XU = require("@sembiance/xu"),
 				if(!["number", "string", "boolean", "undefined"].includes(result.result.type))
 				{
 					//console.log(result);
-					return cb(new Error("CDPW.evaluate: Unsupported result type [" + result.result.type + "] for expression: " + expression));
+					return cb(new Error(`CDPW.evaluate: Unsupported result type [${result.result.type}] for expression: ${expression}`));
 				}
 
 				cb(undefined, result.result.value);
@@ -178,7 +173,7 @@ const XU = require("@sembiance/xu"),
 		// Runs the passed in function fun continually until it calls it's subcb with a truthy second value or until timeout has passed
 		wait(fun, timeout, cb)
 		{
-			const timeoutError = new Error("CDPW.wait timed out (Screenshot written to /tmp/wait_failed_ss.png): " + fun.toString());
+			const timeoutError = new Error(`CDPW.wait timed out (Screenshot written to /tmp/wait_failed_ss.png): ${fun.toString()}`);
 			const timeoutid = setTimeout(() =>
 			{
 				this.client.Page.captureScreenshot({format : "png"}, (err, ss) =>
@@ -226,13 +221,13 @@ const XU = require("@sembiance/xu"),
 			this.client.DOM.querySelector({nodeId : this.document.root.nodeId, selector}, (err, result) =>
 			{
 				if(err || !result || !result.nodeId)
-					return cb([new Error("Invalid selector: " + selector), result, err]);
+					return cb([new Error(`Invalid selector: ${selector}`), result, err]);
 					
 				cb(undefined, result.nodeId);
 			});
 		}
 
-		// Returns the innerText of the given target
+		// Returns the text content of the given target
 		getText(selector, cb)
 		{
 			this.evaluate(`document.querySelector("${selector.replaceAll('"', '\\"')}").innerText`, (suberr, r) => (suberr ? cb(suberr) : cb(undefined, r)));
@@ -653,6 +648,9 @@ const XU = require("@sembiance/xu"),
 						return this();
 
 					this.capture();
+					if(cdpw.cp.exitCode!==null)
+						return this();
+						
 					cdpw.cp.on("exit", this);
 					cdpw.cp.kill();
 				},
@@ -706,7 +704,7 @@ const XU = require("@sembiance/xu"),
 							//return finish(err);
 						}
 						
-						if(result && result.body)
+						if(result?.body)
 							dataContent[requestId] = Buffer.from(result.body, (result.base64Encoded ? "base64" : "utf8"));
 					});
 				}

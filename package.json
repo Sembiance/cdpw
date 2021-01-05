@@ -4,12 +4,11 @@
 	"author"       : "Robert Schultz <robert@cosmicrealms.com>",
 	"description"  : "wrapper around the NPM module chrome-remote-interface",
 	"main"         : "CDPW.js",
-	"dependencies" :
-	{
+	"dependencies" : {
 		"@sembiance/xu"           : "file:/mnt/compendium/DevLab/node-modules/xu",
 		"@sembiance/xutil"        : "file:/mnt/compendium/DevLab/node-modules/xutil",
 		"chrome-remote-interface" : "~0.28.1",
-		"moment"                  : "~2.24.0",
+		"moment"                  : "~2.29.1",
 		"tiptoe"                  : "file:/mnt/compendium/DevLab/node-modules/tiptoe"
 	},
 	"engines"      : { "node" : ">=14" }
